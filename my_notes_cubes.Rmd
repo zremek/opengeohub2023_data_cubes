@@ -12,5 +12,98 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(sf)
 library(stars)
+library(tidyverse)
 ```
+
+Author's book with data cubes explanation https://r-spatial.org/book/06-Cubes.html 
+
+
+"On The Theory of Scales of Measurements" (Stevens 1946): summing up these are discrete (nominal, ordinal) and continous (interval, ratio). We have some values measured on a scale as 1) non-spatial properties of objects and locations, 2) spatial continuosity or disretness. 
+In time-space it is even more difficult. 
+
+Often vector data is assiciated with spatially discrete values, and raster with spatially continous. But points (vector) may indicate locations with some features (discrete) and also continous measures at a location, such as temperature. 
+
+Another distinction is block support and point support. On the example of a polygon, block support means that some value is true for the poly as a whole (it is an aggregation, as population) and block support means that value is constant for all of the points making a polygon (as a constant landuse). 
+
+Data frames and sf data is tidy. Data cubes are different concept. They are usually stored in multi-dimensional arrays. 
+
+Presentation - https://edzer.github.io/OGH23/dc.html
+
+TODO: Foot-and-mouth disease cases has a nice thing I may use in trash in the wild. ReportedDay is an indicator from day 0 to max and it can be nicely plotted even as interactive or a video. 
+
+We can put non-data cube data into data cubes with space and time, to analyse data in constant spatial and time chunks (see https://edzer.github.io/OGH23/hurdat.html)
+
+Stars pkg description https://r-spatial.github.io/stars/ 
+
+Examples from stars pkg: 
+
+```{r}
+prec_file = system.file("nc/test_stageiv_xyt.nc", package = "stars")
+(prec = read_stars(gdal_subdatasets(prec_file)[[1]]))
+```
+
+```{r}
+sf::read_sf(system.file("gpkg/nc.gpkg", package = "sf"), "nc.gpkg") |> 
+  st_transform(st_crs(prec)) -> nc # transform from NAD27 to WGS84
+nc_outline = st_union(st_geometry(nc))
+plot_hook = function() plot(nc_outline, border = 'red', add = TRUE)
+prec |>
+  slice(index = 1:12, along = "time") |>
+  plot(downsample = c(3, 3, 1), hook = plot_hook)
+```
+
+```{r}
+a = aggregate(prec, by = nc, FUN = max)
+plot(a, max.plot = 23, border = 'grey', lwd = .5)
+```
+
+```{r}
+index_max = function(x) ifelse(all(is.na(x)), NA, which.max(x))
+b = st_apply(a, "geom", index_max)
+b |>  mutate(when = st_get_dimension_values(a, "time")[b$index_max]) |>
+  select(when) |>
+  plot(key.pos = 1, main = "time of maximum precipitation")
+```
+
+```{r}
+library(cubble)
+
+a |> setNames("precip") |>
+  st_set_dimensions(2, name = "tm") |>
+  units::drop_units() |>
+  as_cubble(key = id, index = tm) |>
+  suppressWarnings() -> a.cb
+a.cb |>
+  face_temporal() |>
+  unfold(long, lat) |>
+  mutate(tm = as.numeric(tm)) |>
+  ggplot(aes(x_major = long, x_minor = tm, y_major = lat, y_minor = precip)) +
+  geom_sf(data = nc, inherit.aes = FALSE) +
+  geom_glyph_box(width = 0.3, height = 0.1) +
+  geom_glyph(width = 0.3, height = 0.1)
+```
+
+
+Vector data cubes from raster data cubes. 
+
+Consider the following temperature reanalysis data, taken from this file [manual download].
+
+We can read this NetCDF file using either of two ways:
+
+```{r}
+read_stars('skt.sfc.mon.mean.nc') # GDAL RasterLayer
+```
+
+
+```{r}
+read_mdim('skt.sfc.mon.mean.nc')  # GDAL Multidimensional Array API
+```
+Plot 
+
+```{r}
+skt <- read_stars('skt.sfc.mon.mean.nc') # GDAL RasterLayer
+
+plot(skt[,,,1:200])
+```
+
 
